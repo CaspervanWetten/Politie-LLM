@@ -1,46 +1,15 @@
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoConfig, pipeline
-from datasets import load_dataset, Dataset
-
-model_name = "yhavinga/t5-v1.1-base-dutch-cased"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-def tokenize_data(data):
-    input_ids =  tokenizer(
-        data['input'],
-        truncation=True,
-        max_length=256,
-        return_overflowing_tokens=True,
-        return_tensors="pt"
-    )
-
-    decoder_input_ids  = tokenizer(
-        data['output'],
-        truncation=True,
-        max_length=256,
-        return_overflowing_tokens=True
-        return_tensors="pt"
-    )
-
-    sample_map = input_encodings.pop("overflow_to_sample_mapping")
-    for key, values in data.items():
-        input_encodings[key] = [values[i] for i in sample_map]
-    print(input_encodings)
-    return result
+# File to keep the GPT file clean, customs from the video to suit my needs
 
 
-    # '''
-    # Expects singular (input_text, target_text) key-value pairs
-    # '''
-    # input_text = "summarize: " + data['input']
-    # target_text = data['target']
 
-    # input_encodings = tokenizer(input_text, max_length=2048, padding=True, truncation=True)
-    # output_encodings = tokenizer(target_text, max_length=512, padding=True, truncation=True)
-    
-
-    # returnal = {
-    #     "input_ids": input_encodings['input_ids'],
-    #     "attention_mask": input_encodings['attention_mask'],
-    #     "labels": output_encodings['input_ids'],
-    # }
-    return returnal
+from os import getcwd, path
+r"""gets input.txt if not from this datasets folder, from the datasets folder in ../Code
+"""
+def get_input():
+    try:
+        with open('datasets/input.txt', 'r', encoding='utf-8') as f:
+            text = f.read()
+    except FileNotFoundError:
+        with open('Code/datasets/input.txt', 'r', encoding='utf-8') as f:
+            text = f.read()
+    return text
