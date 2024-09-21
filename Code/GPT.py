@@ -13,11 +13,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 n_embed = 32 # 32 embeddings in dimentions. N = dimensions!
 text = get_input()
-#----------------
-
-
-
-torch.manual_seed(1337) # For reproduceability
+#-----------------
 
 	
 # Create a vocabulair of all the unique characters that occur in this text.
