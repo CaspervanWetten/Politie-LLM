@@ -15,10 +15,6 @@ n_embed = 32 # 32 embeddings in dimentions. N = dimensions!
 text = get_input()
 #----------------
 
-
-
-torch.manual_seed(1337) # For reproduceability
-
 	
 # Create a vocabulair of all the unique characters that occur in this text.
 chars = sorted(list(set(text)))
@@ -86,9 +82,11 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
-
+        self.projection = nn.Linear(n_embed, n_embed)
     def forward(self, x):
-        return torch.cat([h(x) for h in self.heads], dim=-1)
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.projection(out)
+        return out
  
 
 class FeedFoward(nn.Module):
@@ -97,8 +95,9 @@ class FeedFoward(nn.Module):
     def __init__(self, n_embed):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embed, n_embed),
+            nn.Linear(n_embed, 4 * n_embed),
             nn.ReLU(),
+            nn.Linear(4 * n_embed, n_embed),
         )
 
     def forward(self, x):
@@ -111,10 +110,14 @@ class Block(nn.Module):
         head_size = n_embed // n_head
         self.sa = MultiHeadAttention(n_head, head_size)
         self.ffwd = FeedFoward(n_embed)
-
+        # This will be a slight deviation from "attention is all you need"
+        # We will be doing pre-attention layer normalization
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
+    
     def forward(self, x):
-        x = self.sa(x)
-        x = self.ffwd(x)
+        x = x + self.sa(self.ln1(x))
+        x = x + self.ffwd(self.ln1(x))
         return x 
 
 class BigramLanguageModel(nn.Module):
@@ -129,6 +132,13 @@ class BigramLanguageModel(nn.Module):
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
         self.sa_heads = MultiHeadAttention(4, n_embed//4) # sa = self-attention
         self.ffwd = FeedFoward(n_embed=n_embed) # Makes the tokens thinks (self matrix multiplication)
+        self.blocks = nn.Sequential(
+            Block(n_embed, n_head=4),
+            Block(n_embed, n_head=4),
+            Block(n_embed, n_head=4),
+            nn.LayerNorm(n_embed)
+        )
+        
         self.lm_head = nn.Linear(n_embed, vocab_size) # LM=loaded model
          # N_embed is the number of embedded dimentions
          # .Embedding creates a shape of vocab_size x vocab_size
