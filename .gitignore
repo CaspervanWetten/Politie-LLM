@@ -1,2 +1,4 @@
 
 /Code/models
+venv/*
+*.pyc
