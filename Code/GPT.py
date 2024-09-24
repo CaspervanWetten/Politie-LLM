@@ -31,6 +31,8 @@ n = int(0.9*len(data)) # Gebruik de eerste 90% als train data
 train_data = data[:n]
 val_data = data[n:]
 
+print(f"train data {len(train_data)}: {train_data[:128]} and \nval data {len(val_data)}: {val_data[:128]}")
+
 # Data loading:
 def get_batch(split):
     # Generate a small batch of inputs x and targets y
