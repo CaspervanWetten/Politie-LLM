@@ -6,18 +6,14 @@ from helpers import get_input
 # Hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # What is the maximum context length for predictions?
-max_iters = 5000
+max_iters = 10000 # 10k
 eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embed = 32 # 32 embeddings in dimentions. N = dimensions!
-text = get_input()
+n_embed = 384 # 32 embeddings in dimentions. N = dimensions!
+text = get_input("wouter")
 #-----------------
-
-	
-#----------------
-
 	
 # Create a vocabulair of all the unique characters that occur in this text.
 chars = sorted(list(set(text)))
@@ -211,4 +207,4 @@ for iter in range(max_iters):
     optimizer.step()
 
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+print(decode(m.generate(context, max_new_tokens=1500)[0].tolist()))
