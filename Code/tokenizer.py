@@ -5,8 +5,8 @@ import unicodedata
 
 class Tokenizer:
     def __init__(self, **kwargs):
-        self.var = kwargs["val"]
-
+        [setattr(self, key, value) for key, value in kwargs.items()] # Arbitrarily accept all keywords passed
+ 
 
     def train(self, **kwargs):
         raise NotImplementedError
@@ -43,7 +43,7 @@ class Tokenizer:
 
 
 # -----------------------------
-# Generic helper functions TODO Figure out if I can just move these to inside the class:
+# Generic helper functions TODO Figure out if I can just move these to inside the class -> why?:
 
 def count_pairs(intList: list, counts=None) -> dict:
     """
