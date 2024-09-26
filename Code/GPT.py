@@ -6,7 +6,7 @@ from helpers import get_input
 # Hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # What is the maximum context length for predictions?
-max_iters = 600 # 10k
+max_iters = 10000 # 10k
 eval_interval = 300
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -38,7 +38,6 @@ class Transformer(nn.Module):
         self.tokenizer = kwarg.get("tokenizer", tokenizer_warning())
         self.vocab_size = self.tokenizer.vocab_size if kwarg.get("tokenzier") != None else vocab_size
         self.chars = self.tokenizer.chars if kwarg.get("tokenzier") != None else chars
-        self.to(kwarg.get("device")) if kwarg.get("device") else self.to(device) # Assign it to the device (CPU on NR2)
         [setattr(self, key, value) for key, value in kwarg.items()] # Arbitrarily accept all keywords passed
 
 		# Each token directly reads off the logits for the next token from a lookup table (which lookup table?)
@@ -63,7 +62,8 @@ class Transformer(nn.Module):
         # De inputs voor de transformer zoeken in de tensor rij en plukken de Xte (X=tokenized input integer) rij uit de lookup table
                 # Use this specific optimizier algorithm TODO understand this
         self.optimizer = torch.optim.AdamW(super().parameters(), lr=learning_rate)
-    
+       
+
     def encode(self, string):
         """
         Calls tokenizer.encode, else falls to general backup
@@ -111,7 +111,7 @@ class Transformer(nn.Module):
             
         return logits, loss
         
-    def generate(self, context, max_new_tokens=512):
+    def generate(self, context, max_new_tokens):
         """
         Requires a tensor as context input (encoded using the same tokenizer),
         max_new_tokens defaults to 512
@@ -158,12 +158,12 @@ class Transformer(nn.Module):
     @torch.no_grad() # A context manager (?) to tell PyTorch to not make these backwards callable, e.g. skip back propagation
     def estimate_loss(self):
         out = {}
-        super().eval() # Set the model to eval mode
+        model.eval() # Set the model to eval mode
         for split in ['train', 'val']:
             losses = torch.zeros(eval_iters)
             for k in range(eval_iters):
                 X, Y = self._get_batch(split)
-                logits, loss = super()(X, Y)
+                logits, loss = model(X, Y)
                 losses[k] = loss.item()
             out[split] = losses.mean()
         model.train() # Set the model to training mode
@@ -233,12 +233,11 @@ if __name__ == "__main__":
     model = Transformer() # Instantiate the transformer
     m = model.to(device) # Assign it to the device (CPU on NR2)
     model.optimize() # Optimize (i.e. train) the trainsformer
+    
 
-    print(f"train data {len(train_data)}: {train_data[:128]} and \nval data {len(val_data)}: {val_data[:128]}")
-
-    context = "Wat is uw naam?"
+    context = torch.zeros((1, 1), dtype=torch.long, device=device) # Context is, basically, the input string
     print()
-    print("AAAS",decode(m.generate(encode(context))[0].tolist()))
+    print("AAAS",decode(m.generate(context)[0].tolist()))
  
     
 
