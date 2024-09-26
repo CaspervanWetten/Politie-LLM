@@ -3,28 +3,29 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 from helpers import get_input
+from time import sleep
 
 class Transformer():
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs): # TODO ADD DEBUG WITH PRINTS
         """
         Accepts batch_size=32, block_size=8, max_iters=600
         eval_interval=300, learning_rate=1e-3, device=cuda if available else cpu
-        eval_iters=200, n_embed=384,
+        eval_iters=200, embedding_dim=384,
         
         train_data,val_data and tokenizer (all these have fallback options)
         """
         # Passable hyperparameters
-        self.batch_size = kwargs.get("batch_size", 32) # how many independent sequences will we process in parallel?
-        self.block_size = 8 # What is the maximum context length for predictions?
-        self.max_iters = 1200 # 10k
+        # TODO Implementeer getters als kwargs
+        self.batch_size = kwargs.get("batch_size", 64) # how many independent sequences will we process in parallel?
+        self.block_size = 16 # What is the maximum context length for predictions?
+        self.max_iters = 600 # 10k
         self.eval_interval = 300
         self.learning_rate = 1e-3
         self.eval_iters = 200
-        self.n_embed = 384 # embeddings in dimensions. N = dimensions!
-        self.n_head = 6 # Number of heads -> has to neatly divide n_embed
+        self.embedding_dim = 96 # embeddings in dimensions. N = dimensions!
+        self.n_head = 6 # Number of heads -> has to neatly divide embedding_dim
         self.n_layer = 6 # Number of blocks
         self.dropout = 0.2 # Dropout randomly drops some blocks during the training, meaning it strongly prevents overfitting
-
 
         # Arbitrarily accept all keywords passed
         [setattr(self, key, value) for key, value in kwargs.items()] 
@@ -64,70 +65,78 @@ class Transformer():
         return out
 
     class Model(nn.Module):
-        def __init__(self, transformer, tokenizer=None, data=None):
+        def __init__(self, Transformer: 'Transformer', Tokenizer=None, data=None):
             super().__init__()
-            #----------------- Fallback for lack of tokenizer
-            # This is basically a MVP tokenizer
-            text = get_input("wouter")
-            chars = sorted(list(set(text)))
-            vocab_size = len(chars)
-            stringtoint = { ch:i for i,ch in enumerate(chars) }
-            inttostring = { i:ch for i,ch in enumerate(chars) }
-            self._bencode = lambda s: [stringtoint[c] for c in s] # backup encoding algo
-            self._bdecode = lambda intL: ''.join([inttostring[i] for i in intL]) # backup decoding algo
-            tokenizer_warning = lambda: print("WARNING: NO TOKENIZER PASSED, USING FALLBACK")
+            self.Transformer = Transformer
             #-----------------
             
             # Tokenizer
-            self.tokenizer = tokenizer if tokenizer != None else tokenizer_warning()
-            self.vocab_size = self.tokenizer.vocab_size if tokenizer != None else vocab_size
-            self.chars = self.tokenizer.chars if tokenizer != None else chars
+            if Tokenizer != None:
+                self.Tokenizer = Tokenizer
+                vocab_size = Tokenizer.vocab_size
+                chars = Tokenizer.chars
+            else:
+                print("WARNING: NO TOKENIZER PASSED, USING FALLBACK")
+                ### Maak een dataset voor de tokenizer
+                self.Tokenizer = None
+                text = get_input("wouter")
+                chars = sorted(list(set(text)))
+                vocab_size = len(chars)
+                ### Instantieer het backup encoding algoritme:
+                stringtoint = { ch:i for i,ch in enumerate(chars) } # {"A":0, "B":1, ..., "!": 80}
+                inttostring= { i:ch for i,ch in enumerate(chars) } # {0:"A", 1:"B", ..., 80:"!"}
+                self._bencode = lambda s: [stringtoint[c] for c in s] # backup encoding algo
+                self._bdecode = lambda l: ''.join([inttostring[i] for i in l]) # backup decoding algo
 
+            self.chars = chars
+            self.vocab_size = vocab_size
+
+            # Data getter
             data = data if data != None else torch.tensor(self.encode(text), dtype=torch.long)
             n = int(0.9*len(data))
             self.train_data = data[:n]
             self.val_data = data[n:]
 
             # Each token directly reads off the logits for the next token from a lookup table (which lookup table?)
-            self.token_embedding_table = nn.Embedding(self.vocab_size, transformer.n_embed)
+            self.tokeembedding_dimding_table = nn.Embedding(self.vocab_size, self.Transformer.embedding_dim)
 
             """Note that the sequence they appear is also the sequence they are used"""
 
             #We're not just encoding identity, we're also encoding position!
-            self.position_embedding_table = nn.Embedding(transformer.block_size, transformer.n_embed)
-            self.blocks = nn.Sequential(*[transformer.Block(self.n_embed, n_head=self.n_head) for _ in range(self.n_layer)])
-            self.ln_f = nn.LayerNorm(transformer.n_embed) # Final layer norm
-            self.lm_head = nn.Linear(transformer.n_embed, self.vocab_size) # LM=loaded model
+            self.positioembedding_dimding_table = nn.Embedding(self.Transformer.block_size, self.Transformer.embedding_dim)
+            self.blocks = nn.Sequential(*[self.Transformer.Block(self.Transformer, self.Transformer.embedding_dim, n_head=self.Transformer.n_head) for _ in range(self.Transformer.n_layer)])
+            self.ln_f = nn.LayerNorm(self.Transformer.embedding_dim) # Final layer norm
+            self.lm_head = nn.Linear(self.Transformer.embedding_dim, self.vocab_size) # LM=loaded model
             # N_embed is the number of embedded dimentions
             # .Embedding creates a shape of vocab_size x vocab_size
             # De inputs voor de transformer zoeken in de tensor rij en plukken de Xte (X=tokenized input integer) rij uit de lookup table
             
         def encode(self, string):
             """
-            Calls tokenizer.encode, else falls to general backup
+            Calls tokenizer.encode, else falls to backup
             """
-            if self.tokenizer:
-                self.tokenizer.encode(string)
+            if self.Tokenizer != None:
+                self.Tokenizer.encode(string)
             else:
                 return self._bencode(string)
 
         def decode(self, string):
             """ 
-            Calls tokenizer.decode, else falls to general backup
+            Calls tokenizer.decode, else falls to backup
             """
-            if self.tokenizer:
-                self.tokenizer.decode(string)
+            if self.Tokenizer != None:
+                self.Tokenizer.decode(string)
             else:
                 return self._bdecode(string)       
 
         def forward(self, context, targets=None):
             B, T = context.shape
             #context and targets are both (B,T) tensor of integers
-            tok_em = self.token_embedding_table(context)  # B,T,C
-            pos_em = self.position_embedding_table(torch.arange(T, device=transformer.device)) # T, C
+            tok_em = self.tokeembedding_dimding_table(context)  # B,T,C
+            pos_em = self.positioembedding_dimding_table(torch.arange(T, device=self.Transformer.device)) # T, C
             x = tok_em + pos_em # B,T,C
-            x = self.sa_heads(x) # Apply one head of self-attention B,T,C
-            x = self.ffwd(x) # B,T,C
+            x = self.blocks(x)
+            x = self.ln_f(x)
             logits = self.lm_head(x) # (B,T, vocab_size)
             # Not Logits, token embeddings
             
@@ -149,20 +158,25 @@ class Transformer():
                 
             return logits, loss
         
-        def generate(self, context, max_new_tokens=512):
+        def generate(self, context, max_new_tokens=64):
             """
             Requires a tensor as context input (encoded using the same tokenizer),
             max_new_tokens defaults to 512
 
             returns encoded tensor response
-            """
+            """ # TODO Just generating the answer (no training) is already very slow on NR2, I legit need cuda
+            print(f"Textuele context: {context}")
             if type(context) == str:
-                context = torch.tensor(self.encode(context), dtype=torch.long, device=transformer.device)
+                while len(context) <= self.Transformer.block_size: # Terwijl onder minimale lengte voor batching
+                    context = context.ljust(len(context)  + 1) # Voeg één spatie 
+                context = torch.tensor(self.encode(context), dtype=torch.long, device=self.Transformer.device)
                 context = torch.cat(self._get_batch(data=context))
+            print(f"Tensorized context: {context}")
         # context is (B,T) array of indices
             for _ in range(max_new_tokens):
+                print(f"Currently generating toking {_}")
                 # crop context to the last block_size tokens
-                context_cond = context[:, -transformer.block_size:]
+                context_cond = context[:, -self.Transformer.block_size:]
                 logits, loss = self(context_cond) # Does the prediction 
                 logits = logits[:, -1, :] # Foxus only the last time step, (B,C), de -1 skipt de T dimensie
                 probs = F.softmax(logits, dim=-1) # apply softmax to get probabilities, ook (B,C)
@@ -170,36 +184,35 @@ class Transformer():
                 context = torch.cat((context, context_next), dim=1) # ( Append sampled index to the running sequence) (B, T+1)
             return context
 
-
         def _get_batch(self, split=None, data=None):
             # Generate a small batch of inputs x and targets y
             data = data if data != None else self.train_data if split =='train' else self.val_data
-            ix = torch.randint(len(data) - transformer.block_size, (transformer.batch_size,))
-            x = torch.stack([data[i:i+transformer.block_size] for i in ix])
-            y = torch.stack([data[i+1:i+transformer.block_size+1] for i in ix])
-            x, y = x.to(transformer.device), y.to(transformer.device)
+            ix = torch.randint(len(data) - self.Transformer.block_size, (self.Transformer.batch_size,))
+            x = torch.stack([data[i:i+self.Transformer.block_size] for i in ix])
+            y = torch.stack([data[i+1:i+self.Transformer.block_size+1] for i in ix])
+            x, y = x.to(self.Transformer.device), y.to(self.Transformer.device)
             return x, y
 
-    def save(self, path="Code/models/default.std"):
+    def save(self, path="Code/models/default.pth"): # PTH is convention according to the docs
         torch.save(self.model, path)
         return
     
-    def save_std(self, path="Code/models/default.std"):
-        torch.save(self.model.state_dict, path)
+    def save_std(self, path="default.pt"): # PT is convention according to the docs
+        path = "Code/models/" + path
+        torch.save(self.model.state_dict(), path)
         return
 
     # Basic helper modules, build an interface when needed
     # Niet zeker of dit werkt? We komen er achter lol
     class Head(nn.Module):
-        def __init__(self, transformer, head_size):
+        def __init__(self, Transformer: 'Transformer', head_size):
             super().__init__()
-            self.key = nn.Linear(transformer.n_embed, head_size, bias=False)
-            self.query = nn.Linear(transformer.n_embed, head_size, bias=False)
-            self.value = nn.Linear(transformer.n_embed, head_size, bias=False)
-            self.register_buffer('tril', torch.tril(torch.ones(transformer.block_size, transformer.block_size)))
-            self.dropout = nn.Dropout(transformer.dropout)
-
-
+            self.Transformer = Transformer
+            self.key = nn.Linear(self.Transformer.embedding_dim, head_size, bias=False)
+            self.query = nn.Linear(self.Transformer.embedding_dim, head_size, bias=False)
+            self.value = nn.Linear(self.Transformer.embedding_dim, head_size, bias=False)
+            self.register_buffer('tril', torch.tril(torch.ones(self.Transformer.block_size, self.Transformer.block_size)))
+            self.dropout = nn.Dropout(self.Transformer.dropout)
         def forward(self, x):
             B,T,C = x.shape
             k = self.key(x)
@@ -213,38 +226,40 @@ class Transformer():
             out = wei @ v 
             return out
     class MultiHeadAttention(nn.Module):
-        def __init__(self, transformer, num_heads, head_size):
+        def __init__(self,  Transformer: 'Transformer', num_heads, head_size):
             super().__init__()
-            self.heads = nn.ModuleList([transformer.Head(transformer, head_size) for _ in range(num_heads)])
-            self.projection = nn.Linear(transformer.n_embed, transformer.n_embed)
-            self.dropout = nn.Dropout(transformer.dropout)
+            self.Transformer = Transformer
+            self.heads = nn.ModuleList([self.Transformer.Head(self.Transformer, head_size) for _ in range(num_heads)])
+            self.projection = nn.Linear(self.Transformer.embedding_dim, self.Transformer.embedding_dim)
+            self.dropout = nn.Dropout(self.Transformer.dropout)
         def forward(self, x):
             out = torch.cat([h(x) for h in self.heads], dim=-1)
-            out = self.dropout(self.proj(out)) # A linear transformation of the output of the concationation
+            out = self.dropout(self.projection(out)) # A linear transformation of the output of the concationation
             return out
     class FeedFoward(nn.Module):
         """A simple linear layer followed by a non-linearity"""
-        def __init__(self, n_embed):
+        def __init__(self,  Transformer: 'Transformer', embedding_dim):
             super().__init__()
+            self.Transformer = Transformer
             self.net = nn.Sequential(
-                nn.Linear(n_embed, 4 * n_embed),
+                nn.Linear(embedding_dim, 4 * embedding_dim),
                 nn.ReLU(),
-                nn.Linear(4 * n_embed, n_embed),
-                nn.Dropout(transformer.dropout)
+                nn.Linear(4 * embedding_dim, embedding_dim),
+                nn.Dropout(self.Transformer.dropout)
             )
-
         def forward(self, x):
             return self.net(x)
     class Block(nn.Module):
-        def __init__(self, transformer, n_embed, n_head) -> None:
+        def __init__(self, Transformer: 'Transformer', embedding_dim, n_head) -> None:
             super().__init__()
-            head_size = n_embed // n_head
-            self.sa = transformer.MultiHeadAttention(transformer, n_head, head_size)
-            self.ffwd = transformer.FeedFoward(n_embed)
+            self.Transformer = Transformer
+            head_size = embedding_dim // n_head
+            self.sa = self.Transformer.MultiHeadAttention(self.Transformer, n_head, head_size)
+            self.ffwd = self.Transformer.FeedFoward(self.Transformer, embedding_dim)
             # This will be a slight deviation from "attention is all you need"
             # We will be doing pre-attention layer normalization
-            self.ln1 = nn.LayerNorm(n_embed)
-            self.ln2 = nn.LayerNorm(n_embed)
+            self.ln1 = nn.LayerNorm(embedding_dim)
+            self.ln2 = nn.LayerNorm(embedding_dim)
         
         def forward(self, x):
             x = x + self.sa(self.ln1(x))
@@ -253,17 +268,19 @@ class Transformer():
 
 
 if __name__ == "__main__": 
-    transformer = Transformer() # Instantiate the transformer
+    transformer = Transformer() # Instantiate the 
+    print("Instantiated Transformer")
     transformer.optimize() # Optimize (i.e. train) the trainsformer
+    print("Optimized Transformer")
+    # print(f"train data {len(transformer.model.train_data)}: {transformer.model.train_data[:128]} and \nval data {len(transformer.model.val_data)}: {transformer.model.val_data[:128]}")
 
-    print(f"train data {len(transformer.model.train_data)}: {transformer.model.train_data[:128]} and \nval data {len(transformer.model.val_data)}: {transformer.model.val_data[:128]}")
-
-    context = "Wat is uw naam?"
-    transformer.model.generate(torch.zeros((1, 1), dtype=torch.long, device=transformer.device)) # Context is, basically, the input string)
+    context = str(input("Hey :) Please talk to me! \n"))
+    sleep(.15)
     generated = transformer.model.generate(context)[0].tolist()
-    print(generated)
-    print(transformer.model.decode(generated))
-    transformer.save_std()
-    transformer.save()
+    print(f"{type(generated)} response: {generated}")
+    decoded = transformer.model.decode(generated)
+    print(f"decoded: {decoded}")
+    transformer.save_std("v2")
+    print('saved transformer')
 
     
