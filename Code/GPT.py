@@ -16,8 +16,7 @@ n_head = 6 # Number of heads -> has to neatly divide n_embed
 n_layer = 6 # Number of blocks
 dropout = 0.2 # Dropout randomly drops some blocks during the training, meaning it strongly prevents overfitting
 text = get_input("wouter")
-# Bring down the layers and embedding dimensions to improve speed
-#-----------------
+# ----------------- Bring down the layers and embedding dimensions to improve speed
 
 	
 # Create a vocabulair of all the unique characters that occur in this text.
