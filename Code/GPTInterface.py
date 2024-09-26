@@ -20,7 +20,11 @@ class Transformer():
         self.eval_interval = 300
         self.learning_rate = 1e-3
         self.eval_iters = 200
-        self.n_embed = 384 # 32 embeddings in dimentions. N = dimensions!
+        self.n_embed = 384 # embeddings in dimensions. N = dimensions!
+        self.n_head = 6 # Number of heads -> has to neatly divide n_embed
+        self.n_layer = 6 # Number of blocks
+        self.dropout = 0.2 # Dropout randomly drops some blocks during the training, meaning it strongly prevents overfitting
+
 
         # Arbitrarily accept all keywords passed
         [setattr(self, key, value) for key, value in kwargs.items()] 
@@ -91,15 +95,8 @@ class Transformer():
 
             #We're not just encoding identity, we're also encoding position!
             self.position_embedding_table = nn.Embedding(transformer.block_size, transformer.n_embed)
-            self.sa_heads = transformer.MultiHeadAttention(transformer, 4, transformer.n_embed//4) # sa = self-attention
-            self.ffwd = transformer.FeedFoward(n_embed=transformer.n_embed) # Makes the tokens thinks (self matrix multiplication)
-            self.blocks = nn.Sequential(
-                transformer.Block(transformer, transformer.n_embed, n_head=4),
-                transformer.Block(transformer, transformer.n_embed, n_head=4),
-                transformer.Block(transformer, transformer.n_embed, n_head=4),
-                nn.LayerNorm(transformer.n_embed)
-            )
-            
+            self.blocks = nn.Sequential(*[transformer.Block(self.n_embed, n_head=self.n_head) for _ in range(self.n_layer)])
+            self.ln_f = nn.LayerNorm(transformer.n_embed) # Final layer norm
             self.lm_head = nn.Linear(transformer.n_embed, self.vocab_size) # LM=loaded model
             # N_embed is the number of embedded dimentions
             # .Embedding creates a shape of vocab_size x vocab_size
@@ -183,6 +180,13 @@ class Transformer():
             x, y = x.to(transformer.device), y.to(transformer.device)
             return x, y
 
+    def save(self, path="Code/models/default.std"):
+        torch.save(self.model, path)
+        return
+    
+    def save_std(self, path="Code/models/default.std"):
+        torch.save(self.model.state_dict, path)
+        return
 
     # Basic helper modules, build an interface when needed
     # Niet zeker of dit werkt? We komen er achter lol
@@ -193,6 +197,8 @@ class Transformer():
             self.query = nn.Linear(transformer.n_embed, head_size, bias=False)
             self.value = nn.Linear(transformer.n_embed, head_size, bias=False)
             self.register_buffer('tril', torch.tril(torch.ones(transformer.block_size, transformer.block_size)))
+            self.dropout = nn.Dropout(transformer.dropout)
+
 
         def forward(self, x):
             B,T,C = x.shape
@@ -202,6 +208,7 @@ class Transformer():
             wei = q @ k.transpose(-2, -1) * C**-0.5
             wei = wei.masked_fill(self.tril[:T, :T] ==0, float('-inf'))
             wei = F.softmax(wei, dim=-1)
+            wei = self.dropout(wei)
             v = self.value(x)
             out = wei @ v 
             return out
@@ -210,9 +217,10 @@ class Transformer():
             super().__init__()
             self.heads = nn.ModuleList([transformer.Head(transformer, head_size) for _ in range(num_heads)])
             self.projection = nn.Linear(transformer.n_embed, transformer.n_embed)
+            self.dropout = nn.Dropout(transformer.dropout)
         def forward(self, x):
             out = torch.cat([h(x) for h in self.heads], dim=-1)
-            out = self.projection(out)
+            out = self.dropout(self.proj(out)) # A linear transformation of the output of the concationation
             return out
     class FeedFoward(nn.Module):
         """A simple linear layer followed by a non-linearity"""
@@ -222,6 +230,7 @@ class Transformer():
                 nn.Linear(n_embed, 4 * n_embed),
                 nn.ReLU(),
                 nn.Linear(4 * n_embed, n_embed),
+                nn.Dropout(transformer.dropout)
             )
 
         def forward(self, x):
@@ -239,7 +248,7 @@ class Transformer():
         
         def forward(self, x):
             x = x + self.sa(self.ln1(x))
-            x = x + self.ffwd(self.ln1(x))
+            x = x + self.ffwd(self.ln2(x))
             return x 
 
 
@@ -254,4 +263,7 @@ if __name__ == "__main__":
     generated = transformer.model.generate(context)[0].tolist()
     print(generated)
     print(transformer.model.decode(generated))
+    transformer.save_std()
+    transformer.save()
+
     
