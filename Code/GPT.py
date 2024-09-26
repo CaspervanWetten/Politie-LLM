@@ -4,15 +4,19 @@ from torch.nn import functional as F
 
 from helpers import get_input
 # Hyperparameters
-batch_size = 32 # how many independent sequences will we process in parallel?
-block_size = 8 # What is the maximum context length for predictions?
+batch_size = 64 # how many independent sequences will we process in parallel?
+block_size = 256 # X amount of tokens to predict the X+1th token
 max_iters = 5000
-eval_interval = 300
-learning_rate = 1e-3
+eval_interval = 500
+learning_rate = 3e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embed = 32 # 32 embeddings in dimentions. N = dimensions!
-text = get_input()
+n_embed = 384 # embeddings in dimentions. N = dimensions!
+n_head = 6 # Number of heads -> has to neatly divide n_embed
+n_layer = 6 # Number of blocks
+dropout = 0.2 # Dropout randomly drops some blocks during the training, meaning it strongly prevents overfitting
+text = get_input("wouter")
+# Bring down the layers and embedding dimensions to improve speed
 #-----------------
 
 	
@@ -65,6 +69,8 @@ class Head(nn.Module):
         self.value = nn.Linear(n_embed, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
 
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, x):
         B,T,C = x.shape
         k = self.key(x)
@@ -73,6 +79,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * C**-0.5
         wei = wei.masked_fill(self.tril[:T, :T] ==0, float('-inf'))
         wei = F.softmax(wei, dim=-1)
+        wei = self.dropout(wei)
         v = self.value(x)
         out = wei @ v 
         return out
@@ -82,9 +89,13 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.proj = nn.Linear(n_embed, n_embed)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        return torch.cat([h(x) for h in self.heads], dim=-1)
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.dropout(self.proj(out)) # A linear transformation of the output of the concationation
+        return out
  
 
 class FeedFoward(nn.Module):
@@ -93,8 +104,10 @@ class FeedFoward(nn.Module):
     def __init__(self, n_embed):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embed, n_embed),
+            nn.Linear(n_embed, 4 * n_embed),
             nn.ReLU(),
+            nn.Linear(4 * n_embed, n_embed),
+            nn.Dropout(dropout)
         )
 
     def forward(self, x):
@@ -104,30 +117,31 @@ class Block(nn.Module):
 
     def __init__(self, n_embed, n_head) -> None:
         super().__init__()
-        head_size = n_embed // n_head
-        self.sa = MultiHeadAttention(n_head, head_size)
-        self.ffwd = FeedFoward(n_embed)
+        head_size = n_embed // n_head # Should be 8 
+        self.sa = MultiHeadAttention(n_head, head_size)  # sa = self-attention
+        self.ffwd = FeedFoward(n_embed) # Makes the tokens thinks (self matrix multiplication)
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
 
     def forward(self, x):
-        x = self.sa(x)
-        x = self.ffwd(x)
+        x = x + self(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
         return x 
 
 class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
-		# Each token directly reads off the logits for the next token from a lookup table (which lookup table?)
-        self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
-
         """Note that the sequence they appear is also the sequence they are used"""
 
+		# Each token directly reads off the logits for the next token from a lookup table (which lookup table?)
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         #We're not just encoding identity, we're also encoding position!
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_heads = MultiHeadAttention(4, n_embed//4) # sa = self-attention
-        self.ffwd = FeedFoward(n_embed=n_embed) # Makes the tokens thinks (self matrix multiplication)
+        self.blocks = nn.Sequential(*[Block(n_embed, n_head=n_head) for _ in range(n_layer)])
+        self.ln_f = nn.LayerNorm(n_embed) # Final layer norm
         self.lm_head = nn.Linear(n_embed, vocab_size) # LM=loaded model
-         # N_embed is the number of embedded dimentions
-         # .Embedding creates a shape of vocab_size x vocab_size
+        # N_embed is the number of embedded dimentions
+        # .Embedding creates a shape of vocab_size x vocab_size
         # De inputs voor de transformer zoeken in de tensor rij en plukken de Xte (X=tokenized input integer) rij uit de lookup table
         
     def forward(self, idx, targets=None):
@@ -136,8 +150,8 @@ class BigramLanguageModel(nn.Module):
         tok_em = self.token_embedding_table(idx)  # B,T,C
         pos_em = self.position_embedding_table(torch.arange(T, device=device)) # T, C
         x = tok_em + pos_em # B,T,C
-        x = self.sa_heads(x) # Apply one head of self-attention B,T,C
-        x = self.ffwd(x) # B,T,C
+        x = self.blocks(x)
+        x = self.ln_f(x)
         logits = self.lm_head(x) # (B,T, vocab_size)
         # Not Logits, token embeddings
         
@@ -171,27 +185,36 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # ( Append sampled index to the running sequence) (B, T+1)
         return idx
 		
-model = BigramLanguageModel()
-m = model.to(device)
 
-# Create a PyTorch optimizer:
-optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate) # Learning rates could be much higher -> SUper high learning rates for specific the same?
+if __name__ == "__main__":
+    model = BigramLanguageModel()
+    m = model.to(device)
 
-for iter in range(max_iters):
-    # Every once in a while evaluate on the loss on train and val sets
-    if iter % eval_interval == 0:
-        losses = estimate_loss()
-        print(losses)
-        print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f}")
+    # Create a PyTorch optimizer:
+    optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate) # Learning rates could be much higher -> SUper high learning rates for specific the same?
 
-    # Sample a batch of data
-    xb, yb = get_batch("train")
+    for iter in range(max_iters):
+        # Every once in a while evaluate on the loss on train and val sets
+        if iter % eval_interval == 0:
+            losses = estimate_loss()
+            print(losses)
+            print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f}")
 
-    # Evaluate the loss
-    logits, loss = model(xb, yb)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()
+        # Sample a batch of data
+        xb, yb = get_batch("train")
 
-context = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+        # Evaluate the loss
+        logits, loss = model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+    context = torch.zeros((1, 1), dtype=torch.long, device=device)
+    print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+    state_dict = m.state_dict()
+    with open("Code/state_dict.txt", "w") as f:
+        for key, value in state_dict.items():
+            f.write(f"{key} with accompanying {value}")
+    torch.save(state_dict, "Code/models/statedict")
+    torch.save(m, "Code/models/statedict")
+
