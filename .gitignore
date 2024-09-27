@@ -2,3 +2,4 @@
 /Code/models/base-dutch-cased/
 venv/*
 *.pyc
+*.pt

@@ -240,7 +240,7 @@ class Transformer():
             super().__init__()
             self.Transformer = Transformer
             self.heads = nn.ModuleList([self.Transformer.Head(self.Transformer, head_size) for _ in range(num_heads)])
-            self.projection = nn.Linear(self.Transformer.embedding_dim, self.Transformer.embedding_dim)
+            self.projection = nn.Linear(self.Transformer.embedding_dim, self.Transformer.embedding_dim) # patch embedding v encoder embedding
             self.dropout = nn.Dropout(self.Transformer.dropout)
         def forward(self, x):
             out = torch.cat([h(x) for h in self.heads], dim=-1)

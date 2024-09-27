@@ -71,15 +71,11 @@ class TokenizersConfig:
 
 
 class Tokenizers(nn.Module):
-    def __init__(
-            self,
-            cfg: TokenizersConfig,
-    ) -> None:
+    def __init__(self, cfg: TokenizersConfig,):
         super().__init__()
         logger.info(f"Tokenizers Config: {cfg.__dict__}")
 
         self.cfg = cfg
-
         self.embed = cfg.embed_dim
         self.post_extract_proj = (
             nn.Linear(self.embed, cfg.encoder_embed_dim)
@@ -121,11 +117,7 @@ class Tokenizers(nn.Module):
         padding_mask = padding_mask.all(-1)
         return padding_mask
 
-    def preprocess(
-            self,
-            source: torch.Tensor,
-            fbank_mean: float = 15.41663,
-            fbank_std: float = 6.55582,
+    def preprocess(self, source: torch.Tensor, fbank_mean: float = 15.41663, fbank_std: float = 6.55582,
     ) -> torch.Tensor:
         fbanks = []
         for waveform in source:

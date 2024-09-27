@@ -3,11 +3,10 @@ import unicodedata
 
 
 
-class Tokenizer:
+class GenericTokenizer:
     def __init__(self, **kwargs):
         [setattr(self, key, value) for key, value in kwargs.items()] # Arbitrarily accept all keywords passed
  
-
     def train(self, **kwargs):
         raise NotImplementedError
 
@@ -17,14 +16,12 @@ class Tokenizer:
         """
         raise NotImplementedError
 
-
     def decode(self, input: list) -> str:
         """
         Inputs a list of integers, returns a string
         List of integers is the generated token list
         """
-        raise NotImplementedError
-    
+        raise NotImplementedError  
 
     def save(self, file_name: str) -> None:
         """
@@ -39,6 +36,7 @@ class Tokenizer:
         Loads file_name.model, file_name has to be a direct reference to the correct .model file
         May work with .model files not saved by my code? Never tested it tbh
         """
+        raise NotImplementedError
 
 
 

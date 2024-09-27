@@ -29,6 +29,12 @@
 # transformer.model.generate("Misdrijven", 64)
 
 
+from Tokenizers.Audio import AudioTokenizer
+
+AT = AudioTokenizer()
+
+
+
 
 
 
