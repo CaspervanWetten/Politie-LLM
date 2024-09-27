@@ -6,7 +6,7 @@ from helpers import get_input
 from time import sleep
 
 class Transformer():
-    def __init__(self, Model: "Model"=None, **kwargs): # TODO ADD DEBUG WITH PRINTS
+    def __init__(self, Model: "Model"=None, m_state=None, **kwargs): # TODO ADD DEBUG WITH PRINTS
         """
         Accepts batch_size=32, block_size=8, max_iters=600
         eval_interval=300, learning_rate=1e-3, device=cuda if available else cpu
@@ -15,7 +15,7 @@ class Transformer():
         train_data,val_data and tokenizer (all these have fallback options)
         """
         # Passable hyperparameters
-        # TODO Implementeer getters als kwargs
+        # TODO Implementeer getters voor kwargs
         self.batch_size = kwargs.get("batch_size", 64) # how many independent sequences will we process in parallel?
         self.block_size = 16 # What is the maximum context length for predictions?
         self.max_iters = 12000 # 10k
@@ -34,8 +34,18 @@ class Transformer():
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         # Initialization of the model TODO What if one wants to load a pretrained model?
-        self.model = Model if Model != None else self.Model(self)
-        self.model.to(device=self.device)
+
+        # Dit is slechte code maar ik zit in een college en ben ziek
+        # Laat het gepasseerde model, anders laad de state_dict, anders creeer een nieuw model
+        if Model != None:
+            self.model = Model
+        elif m_state != None:
+            with torch.device('meta'):
+                self.model = self.Model(self)
+            self.model.load_state_dict(m_state, assign=True)
+        else:
+            self.model = self.Model(self)
+            self.model.to(device=self.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
     def optimize(self):
@@ -158,7 +168,7 @@ class Transformer():
                 
             return logits, loss
         
-        def generate(self, context, max_new_tokens=64):
+        def generate(self, context, max_new_tokens=32):
             """
             Requires a tensor as context input (encoded using the same tokenizer),
             max_new_tokens defaults to 512
@@ -171,10 +181,10 @@ class Transformer():
                     context = context.ljust(len(context)  + 1) # Voeg één spatie 
                 context = torch.tensor(self.encode(context), dtype=torch.long, device=self.Transformer.device)
                 context = torch.cat(self._get_batch(data=context))
-            print(f"Tensorized context: {context}")
+            print(f"Tensorized context: {len(context)} ; {context}")
         # context is (B,T) array of indices
             for _ in range(max_new_tokens):
-                print(f"Currently generating toking {_}")
+                print(f"Currently generating token {_}")
                 # crop context to the last block_size tokens
                 context_cond = context[:, -self.Transformer.block_size:]
                 logits, loss = self(context_cond) # Does the prediction 
@@ -197,8 +207,8 @@ class Transformer():
         torch.save(self.model, path)
         return
     
-    def save_std(self, path="default.pt"): # PT is convention according to the docs
-        path = "Code/models/" + path
+    def save_std(self, filename="default"): # PT is convention according to the docs
+        path = "Code/models/" + filename + "pth"
         torch.save(self.model.state_dict(), path)
         return
 
@@ -280,7 +290,7 @@ if __name__ == "__main__":
     # print(f"{type(generated)} response: {generated}")
     # decoded = transformer.model.decode(generated)
     # print(f"decoded: {decoded}")
-    transformer.save_std("v3")
+    transformer.save_std("v4")
     print('saved transformer')
 
     
