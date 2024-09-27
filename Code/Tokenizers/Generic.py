@@ -1,5 +1,5 @@
 import unicodedata
-
+import torch
 
 
 
@@ -34,10 +34,28 @@ class GenericTokenizer:
     def load(self, file_name: str):
         """
         Loads file_name.model, file_name has to be a direct reference to the correct .model file
-        May work with .model files not saved by my code? Never tested it tbh
+        May work with .model files not saved by my code? TODO TEST
         """
         raise NotImplementedError
 
+    def forward_padding_mask(self, generic_tensor: torch.Tensor, padding_mask: torch.Tensor,) -> torch.Tensor:
+        """
+        Padding masking is maskeren (dus het niet meegeven aan het model) van de extra lege ruimte die je toevoegt om iets de grootte van je batch size te maken
+        e.g.
+        Tensor([[1, 22, 3, 0, 0, 0],
+        [2, 132, 55, 14, 21, 6],
+        2, 1, 8, 44, 5, 0]])
+        Padding masking is dus het 'verdwijnen' van de nul-paddings.
+        generic_tensor is een tensor van een var lengte met mogelijk padding en mogelijke daadwerlijke informatie
+        padding_mask is de 'opslag' van welke stukjes data van de generic_tensor tensor echt zijn (1) en welke padding (0)
+        Let dus dat deze functie data agnostisch is, zolang gen_tensor en padding_mask dezelfde dimensionaliteit hebben, komt het altijd goed
+        """
+        extra = padding_mask.size(1) % generic_tensor.size(1)
+        if extra > 0:
+            padding_mask = padding_mask[:, :-extra]
+        padding_mask = padding_mask.view(padding_mask.size(0), generic_tensor.size(1), -1)
+        padding_mask = padding_mask.all(-1)
+        return padding_mask
 
 
 # -----------------------------
@@ -130,7 +148,3 @@ stringtoint = { ch:i for i,ch in enumerate(chars) }
 inttostring= { i:ch for i,ch in enumerate(chars) }
 encode = lambda s: [stringtoint[c] for c in s]
 decode = lambda l: ''.join([inttostring[i] for i in l])
-
-print(encode(text))
-
-print(decode([0,0,0,0,1,1,1,1,2,2,2,2]))
