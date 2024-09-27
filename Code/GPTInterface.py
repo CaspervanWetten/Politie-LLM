@@ -184,7 +184,7 @@ class Transformer():
             print(f"Tensorized context: {len(context)} ; {context}")
         # context is (B,T) array of indices
             for _ in range(max_new_tokens):
-                print(f"Currently generating token {_}")
+                print(f"Currently generating token {_ + 1}")
                 # crop context to the last block_size tokens
                 context_cond = context[:, -self.Transformer.block_size:]
                 logits, loss = self(context_cond) # Does the prediction 
