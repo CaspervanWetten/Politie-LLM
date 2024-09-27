@@ -123,7 +123,7 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(n_embed)
 
     def forward(self, x):
-        x = x + self(self.ln1(x))
+        x = x + self.sa(self.ln1(x))
         x = x + self.ffwd(self.ln2(x))
         return x 
 
@@ -175,6 +175,7 @@ class BigramLanguageModel(nn.Module):
     def generate(self, idx, max_new_tokens):
     # idx is (B,T) array of indices in the current context
         for _ in range(max_new_tokens):
+            print(f"Currently generating token {_}")
             # crop idx to the last block_size tokens
             idx_cond = idx[:, -block_size:]
             logits, loss = self(idx_cond) # Does the prediction 
@@ -192,28 +193,28 @@ if __name__ == "__main__":
     # Create a PyTorch optimizer:
     optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate) # Learning rates could be much higher -> SUper high learning rates for specific the same?
 
-    for iter in range(max_iters):
-        # Every once in a while evaluate on the loss on train and val sets
-        if iter % eval_interval == 0:
-            losses = estimate_loss()
-            print(losses)
-            print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f}")
+    # for iter in range(max_iters):
+    #     # Every once in a while evaluate on the loss on train and val sets
+    #     if iter % eval_interval == 0:
+    #         losses = estimate_loss()
+    #         print(losses)
+    #         print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f}")
 
-        # Sample a batch of data
-        xb, yb = get_batch("train")
+    #     # Sample a batch of data
+    #     xb, yb = get_batch("train")
 
-        # Evaluate the loss
-        logits, loss = model(xb, yb)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
+    #     # Evaluate the loss
+    #     logits, loss = model(xb, yb)
+    #     optimizer.zero_grad(set_to_none=True)
+    #     loss.backward()
+    #     optimizer.step()
 
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
-    state_dict = m.state_dict()
-    with open("Code/state_dict.txt", "w") as f:
-        for key, value in state_dict.items():
-            f.write(f"{key} with accompanying {value}")
-    torch.save(state_dict, "Code/models/statedict")
-    torch.save(m, "Code/models/statedict")
+    print(decode(m.generate(context, max_new_tokens=64)[0].tolist()))
+    # state_dict = m.state_dict()
+    # with open("Code/state_dict.txt", "w") as f:
+    #     for key, value in state_dict.items():
+    #         f.write(f"{key} with accompanying {value}")
+    # torch.save(state_dict, "Code/models/statedict")
+    # torch.save(m, "Code/models/statedict")
 
