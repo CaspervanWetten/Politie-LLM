@@ -1,4 +1,4 @@
 
-/Code/models
+/Code/models/base-dutch-cased/
 venv/*
 *.pyc
