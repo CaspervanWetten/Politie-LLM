@@ -6,7 +6,7 @@ from helpers import get_input
 from time import sleep
 
 class Transformer():
-    def __init__(self, **kwargs): # TODO ADD DEBUG WITH PRINTS
+    def __init__(self, Model: "Model"=None, **kwargs): # TODO ADD DEBUG WITH PRINTS
         """
         Accepts batch_size=32, block_size=8, max_iters=600
         eval_interval=300, learning_rate=1e-3, device=cuda if available else cpu
@@ -18,11 +18,11 @@ class Transformer():
         # TODO Implementeer getters als kwargs
         self.batch_size = kwargs.get("batch_size", 64) # how many independent sequences will we process in parallel?
         self.block_size = 16 # What is the maximum context length for predictions?
-        self.max_iters = 600 # 10k
+        self.max_iters = 12000 # 10k
         self.eval_interval = 300
         self.learning_rate = 1e-3
         self.eval_iters = 200
-        self.embedding_dim = 96 # embeddings in dimensions. N = dimensions!
+        self.embedding_dim = 384 # embeddings in dimensions. N = dimensions!
         self.n_head = 6 # Number of heads -> has to neatly divide embedding_dim
         self.n_layer = 6 # Number of blocks
         self.dropout = 0.2 # Dropout randomly drops some blocks during the training, meaning it strongly prevents overfitting
@@ -34,7 +34,7 @@ class Transformer():
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         # Initialization of the model TODO What if one wants to load a pretrained model?
-        self.model = self.Model(self)
+        self.model = Model if Model != None else self.Model(self)
         self.model.to(device=self.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
@@ -269,18 +269,18 @@ class Transformer():
 
 if __name__ == "__main__": 
     transformer = Transformer() # Instantiate the 
-    print("Instantiated Transformer")
+    # print("Instantiated Transformer")
     transformer.optimize() # Optimize (i.e. train) the trainsformer
-    print("Optimized Transformer")
-    # print(f"train data {len(transformer.model.train_data)}: {transformer.model.train_data[:128]} and \nval data {len(transformer.model.val_data)}: {transformer.model.val_data[:128]}")
+    # print("Optimized Transformer")
+    # # print(f"train data {len(transformer.model.train_data)}: {transformer.model.train_data[:128]} and \nval data {len(transformer.model.val_data)}: {transformer.model.val_data[:128]}")
 
-    context = str(input("Hey :) Please talk to me! \n"))
-    sleep(.15)
-    generated = transformer.model.generate(context)[0].tolist()
-    print(f"{type(generated)} response: {generated}")
-    decoded = transformer.model.decode(generated)
-    print(f"decoded: {decoded}")
-    transformer.save_std("v2")
+    # context = str(input("Hey :) Please talk to me! \n"))
+    # sleep(.15)
+    # generated = transformer.model.generate(context)[0].tolist()
+    # print(f"{type(generated)} response: {generated}")
+    # decoded = transformer.model.decode(generated)
+    # print(f"decoded: {decoded}")
+    transformer.save_std("v3")
     print('saved transformer')
 
     
