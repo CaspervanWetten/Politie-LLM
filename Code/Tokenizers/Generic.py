@@ -1,25 +1,37 @@
 import unicodedata
 import torch
+import logging
+
+from abc import ABC, abstractmethod
 
 
-
-class GenericTokenizer:
+class GenericTokenizer(ABC):
     def __init__(self, **kwargs):
         [setattr(self, key, value) for key, value in kwargs.items()] # Arbitrarily accept all keywords passed
+        if kwargs.get("data", None):
+            self.data = kwargs['data']
+        else:
+            raise AttributeError
+        logging.basicConfig(level=logging.DEBUG if kwargs.get("debug", None) != None else logging.WARNING)
+        self.loging = logging.getLogger(__name__)
+        self.debug = lambda s: self.loging.debug(f"\n{s}\n")
+
  
+    # @abstractmethod
     def train(self, **kwargs):
         raise NotImplementedError
 
-    def encode(self, input: str) -> list:
+    @abstractmethod
+    def encode(self, input) -> torch.tensor:
         """
-        Inputs a string, returns a list of integers, i.e. the token encodings
+        Inputs some data, returns a tensor (a 2d list of integers), i.e. the token encodings
         """
         raise NotImplementedError
 
-    def decode(self, input: list) -> str:
+    @abstractmethod
+    def decode(self, input: torch.tensor):
         """
-        Inputs a list of integers, returns a string
-        List of integers is the generated token list
+        Inputs a tensor (a 2d list of integers), returns a the expected datatype
         """
         raise NotImplementedError  
 
@@ -37,6 +49,21 @@ class GenericTokenizer:
         May work with .model files not saved by my code? TODO TEST
         """
         raise NotImplementedError
+
+    @abstractmethod # Do just super() for both but have different defaults, have this have no defaults
+    def pad_input(self, input: torch.Tensor, length: int, dims: int) -> torch.Tensor:
+        """
+        Pads the input to the desired padding length
+        """
+        ### ChatGPT ###
+        self.debug(f"Before: {input}")
+        while input.size(0) < length:
+            tensor = torch.cat((input, torch.zeros(1, input.size(0))), dim=0)
+            returnal = tensor.masked_fill(torch.tril == 0, float('-inf'))
+            self.debug(f"Tensor: {tensor}")
+            self.debug(f"Returnal: {returnal}")
+
+        return returnal
 
     def forward_padding_mask(self, generic_tensor: torch.Tensor, padding_mask: torch.Tensor,) -> torch.Tensor:
         """
