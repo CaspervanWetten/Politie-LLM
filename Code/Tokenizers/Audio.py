@@ -24,6 +24,12 @@ class AudioTokenizer(GenericTokenizer):
         waveform, sample_rate = torchaudio.load(file_path)
         # Print out the waveform shape and sample rate for confirmation
         return self.extract_features(waveform)
+    
+    def decode(self, tensor, path) -> str:
+        """
+        Takes a tensor and decodes it, returns the saved folder string 
+        """
+        return NotImplementedError
 
     def preprocess(self, source: torch.Tensor, fbank_mean: float = 15.41663, fbank_std: float = 6.55582,
         ) -> torch.Tensor:
@@ -75,4 +81,5 @@ class AudioTokenizer(GenericTokenizer):
     def forward_padding_mask(self, generic_tensor: torch.Tensor, padding_mask: torch.Tensor) -> torch.Tensor:
         return super().forward_padding_mask(generic_tensor, padding_mask)
 
-
+    def pad_input(self, input: torch.Tensor, length: 32, dims: 3) -> torch.Tensor:
+        return super().pad_input(input, length, dims)

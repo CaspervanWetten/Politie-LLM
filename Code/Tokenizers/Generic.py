@@ -1,6 +1,7 @@
 import unicodedata
 import torch
 import logging
+import torch.nn.functional as F
 
 from abc import ABC, abstractmethod
 
@@ -11,7 +12,7 @@ class GenericTokenizer(ABC):
         if kwargs.get("data", None):
             self.data = kwargs['data']
         else:
-            raise AttributeError
+            raise AttributeError("No data passed!")
         logging.basicConfig(level=logging.DEBUG if kwargs.get("debug", None) != None else logging.WARNING)
         self.loging = logging.getLogger(__name__)
         self.debug = lambda s: self.loging.debug(f"\n{s}\n")
@@ -56,12 +57,11 @@ class GenericTokenizer(ABC):
         Pads the input to the desired padding length
         """
         ### ChatGPT ###
-        self.debug(f"Before: {input}")
-        while input.size(0) < length:
-            tensor = torch.cat((input, torch.zeros(1, input.size(0))), dim=0)
-            returnal = tensor.masked_fill(torch.tril == 0, float('-inf'))
-            self.debug(f"Tensor: {tensor}")
-            self.debug(f"Returnal: {returnal}")
+        while input.size(dims-1) < length:
+            input = F.pad(input, (0, 1), "constant", 0)
+        self.debug(f"Tensor: {input}")
+        returnal = input.masked_fill(torch.tril(torch.ones(input.size(dims-1), input.size(dims-1))) == 0, 0)
+        self.debug(f"Returnal: {returnal}")
 
         return returnal
 
@@ -71,7 +71,7 @@ class GenericTokenizer(ABC):
         e.g.
         Tensor([[1, 22, 3, 0, 0, 0],
         [2, 132, 55, 14, 21, 6],
-        2, 1, 8, 44, 5, 0]])
+        [2, 1, 8, 44, 5, 0]])
         Padding masking is dus het 'verdwijnen' van de nul-paddings.
         generic_tensor is een tensor van een var lengte met mogelijk padding en mogelijke daadwerlijke informatie
         padding_mask is de 'opslag' van welke stukjes data van de generic_tensor tensor echt zijn (1) en welke padding (0)
@@ -86,8 +86,7 @@ class GenericTokenizer(ABC):
 
 
 # -----------------------------
-# Generic helper functions TODO Figure out if I can just move these to inside the class -> why?:
-
+# Generic helper functions TODO Move these to the text version!
 def count_pairs(intList: list, counts=None) -> dict:
     """
     Given a list of itegers, return a dict of the counts of consecutive pairs of integers
