@@ -1,12 +1,14 @@
+import logging
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
 from helpers import get_input
 from time import sleep
+from Tokenizers.Generic import GenericTokenizer
 
 class Transformer():
-    def __init__(self, Model: "Model"=None, m_state=None, **kwargs): # TODO ADD DEBUG WITH PRINTS
+    def __init__(self, Model: "Model"=None, m_state=None, Tokenizer: "GenericTokenizer"=None, data=None, **kwargs): # TODO ADD DEBUG WITH PRINTS
         """
         Accepts batch_size=32, block_size=8, max_iters=600
         eval_interval=300, learning_rate=1e-3, device=cuda if available else cpu
@@ -18,7 +20,7 @@ class Transformer():
         # TODO Implementeer getters voor kwargs
         self.batch_size = kwargs.get("batch_size", 64) # how many independent sequences will we process in parallel?
         self.block_size = 16 # What is the maximum context length for predictions?
-        self.max_iters = 12000 # 10k
+        self.max_iters = 1200 # 10k
         self.eval_interval = 300
         self.learning_rate = 1e-3
         self.eval_iters = 200
@@ -26,6 +28,10 @@ class Transformer():
         self.n_head = 6 # Number of heads -> has to neatly divide embedding_dim
         self.n_layer = 6 # Number of blocks
         self.dropout = 0.2 # Dropout randomly drops some blocks during the training, meaning it strongly prevents overfitting
+        logging.basicConfig(level=logging.DEBUG if kwargs.get("debug", False) else logging.WARNING)
+        self.loging = logging.getLogger(__name__)
+        self.debug = lambda s: self.loging.debug(f"\n{s}\n")
+
 
         # Arbitrarily accept all keywords passed
         [setattr(self, key, value) for key, value in kwargs.items()] 
@@ -33,22 +39,21 @@ class Transformer():
         # Non-passable arguments
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        # Initialization of the model TODO What if one wants to load a pretrained model?
-
         # Dit is slechte code maar ik zit in een college en ben ziek
         # Laat het gepasseerde model, anders laad de state_dict, anders creeer een nieuw model
         if Model != None:
             self.model = Model
         elif m_state != None:
             with torch.device('meta'):
-                self.model = self.Model(self)
+                self.model = self.Model(self, Tokenizer, data)
             self.model.load_state_dict(m_state, assign=True)
         else:
-            self.model = self.Model(self)
+            self.model = self.Model(self, Tokenizer, data)
             self.model.to(device=self.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
     def optimize(self):
+        self.debug("Starting otimization")
         for iter in range(self.max_iters):
             if iter % self.eval_interval == 0:
                 losses = self.estimate_loss()
@@ -75,40 +80,41 @@ class Transformer():
         return out
 
     class Model(nn.Module):
-        def __init__(self, Transformer: 'Transformer', Tokenizer=None, data=None):
+        def __init__(self, Transformer: 'Transformer', Tokenizer: 'GenericTokenizer'=None, data=None):
             super().__init__()
             self.Transformer = Transformer
             #-----------------
+            # TODO Sloop de Tokenizer uit het model en bouw het in de transformer 
             
             # Tokenizer
             if Tokenizer != None:
                 self.Tokenizer = Tokenizer
-                vocab_size = Tokenizer.vocab_size
-                chars = Tokenizer.chars
+                self.distinct_tokens = Tokenizer.distinct_tokens
+                self.num_distinct_tokens = Tokenizer.num_distinct_tokens
             else:
-                print("WARNING: NO TOKENIZER PASSED, USING FALLBACK")
+                print("WARNING: NO TOKENIZER PASSED, DEFAULTING TO MVP")
                 ### Maak een dataset voor de tokenizer
                 self.Tokenizer = None
                 text = get_input("wouter")
                 chars = sorted(list(set(text)))
                 vocab_size = len(chars)
-                ### Instantieer het backup encoding algoritme:
+                ### Instantieer het backup en- en decoding algoritme:
                 stringtoint = { ch:i for i,ch in enumerate(chars) } # {"A":0, "B":1, ..., "!": 80}
                 inttostring= { i:ch for i,ch in enumerate(chars) } # {0:"A", 1:"B", ..., 80:"!"}
                 self._bencode = lambda s: [stringtoint[c] for c in s] # backup encoding algo
                 self._bdecode = lambda l: ''.join([inttostring[i] for i in l]) # backup decoding algo
-
-            self.chars = chars
-            self.vocab_size = vocab_size
+                self.distinct_tokens = chars
+                self.num_distinct_tokens = vocab_size
 
             # Data getter
             data = data if data != None else torch.tensor(self.encode(text), dtype=torch.long)
             n = int(0.9*len(data))
             self.train_data = data[:n]
+            print(self.train_data)
             self.val_data = data[n:]
 
             # Each token directly reads off the logits for the next token from a lookup table (which lookup table?)
-            self.tokeembedding_dimding_table = nn.Embedding(self.vocab_size, self.Transformer.embedding_dim)
+            self.token_embedding_dimmingtable = nn.Embedding(self.num_distinct_tokens, self.Transformer.embedding_dim)
 
             """Note that the sequence they appear is also the sequence they are used"""
 
@@ -116,35 +122,42 @@ class Transformer():
             self.positioembedding_dimding_table = nn.Embedding(self.Transformer.block_size, self.Transformer.embedding_dim)
             self.blocks = nn.Sequential(*[self.Transformer.Block(self.Transformer, self.Transformer.embedding_dim, n_head=self.Transformer.n_head) for _ in range(self.Transformer.n_layer)])
             self.ln_f = nn.LayerNorm(self.Transformer.embedding_dim) # Final layer norm
-            self.lm_head = nn.Linear(self.Transformer.embedding_dim, self.vocab_size) # LM=loaded model
+            self.lm_head = nn.Linear(self.Transformer.embedding_dim, self.num_distinct_tokens) # LM=loaded model
             # N_embed is the number of embedded dimentions
             # .Embedding creates a shape of vocab_size x vocab_size
             # De inputs voor de transformer zoeken in de tensor rij en plukken de Xte (X=tokenized input integer) rij uit de lookup table
             
-        def encode(self, string):
+        def encode(self, input):
             """
             Calls tokenizer.encode, else falls to backup
             """
             if self.Tokenizer != None:
-                self.Tokenizer.encode(string)
+                return self.Tokenizer.encode(input)
             else:
-                return self._bencode(string)
+                return self._bencode(input)
 
         def decode(self, string):
             """ 
             Calls tokenizer.decode, else falls to backup
             """
             if self.Tokenizer != None:
-                self.Tokenizer.decode(string)
+                return self.Tokenizer.decode(string)
             else:
                 return self._bdecode(string)       
 
         def forward(self, context, targets=None):
+            """"
+            Vereist een 2d tensor (voor nu)
+            Moet voortaan vanuit de tokenizer komen 
+            """
             B, T = context.shape
             #context and targets are both (B,T) tensor of integers
-            tok_em = self.tokeembedding_dimding_table(context)  # B,T,C
+            tok_em = self.token_embedding_dimmingtable(context)  # B,T,C 
+                    # self.Tokenizer.embedding_
             pos_em = self.positioembedding_dimding_table(torch.arange(T, device=self.Transformer.device)) # T, C
-            x = tok_em + pos_em # B,T,C
+            x = tok_em + pos_em # B,T,
+            # ----------------------------
+            # Volgens mij moet alles hierboven de tokenizer worden
             x = self.blocks(x)
             x = self.ln_f(x)
             logits = self.lm_head(x) # (B,T, vocab_size)
@@ -170,29 +183,29 @@ class Transformer():
         
         def generate(self, context, max_new_tokens=32):
             """
-            Requires a tensor as context input (encoded using the same tokenizer),
-            max_new_tokens defaults to 512
+            Expects a context input, this context will be tensorized using tokenizer.encode()
+            max_new_tokens defaults to 32
 
-            returns encoded tensor response
+            returns tensor response
             """ # TODO Just generating the answer (no training) is already very slow on NR2, I legit need cuda
-            print(f"Textuele context: {context}")
-            if type(context) == str:
-                while len(context) <= self.Transformer.block_size: # Terwijl onder minimale lengte voor batching
-                    context = context.ljust(len(context)  + 1) # Voeg één spatie 
+            if not isinstance(context, torch.Tensor):
                 context = torch.tensor(self.encode(context), dtype=torch.long, device=self.Transformer.device)
-                context = torch.cat(self._get_batch(data=context))
-            print(f"Tensorized context: {len(context)} ; {context}")
-        # context is (B,T) array of indices
+            encoded = self.Tokenizer.pad_input(context) # Batching????
+            length = len(encoded)
+            
+            print(f"{type(encoded)} encoded Context: {len(encoded)} ; {encoded}")
+            #   context is (B,T) array of indices
             for _ in range(max_new_tokens):
                 print(f"Currently generating token {_ + 1}")
                 # crop context to the last block_size tokens
-                context_cond = context[:, -self.Transformer.block_size:]
+                context_cond = encoded[:, -self.Transformer.block_size:]
+                self.Transformer.debug(context_cond)
                 logits, loss = self(context_cond) # Does the prediction 
                 logits = logits[:, -1, :] # Foxus only the last time step, (B,C), de -1 skipt de T dimensie
                 probs = F.softmax(logits, dim=-1) # apply softmax to get probabilities, ook (B,C)
                 context_next = torch.multinomial(probs, num_samples=1) # Sample from the distributino by flattening it, (B, 1)
-                context = torch.cat((context, context_next), dim=1) # ( Append sampled index to the running sequence) (B, T+1)
-            return context
+                encoded = torch.cat((encoded, context_next), dim=1) # ( Append sampled index to the running sequence) (B, T+1)
+            return encoded.tolist()[0][length:]
 
         def _get_batch(self, split=None, data=None):
             # Generate a small batch of inputs x and targets y
@@ -208,7 +221,7 @@ class Transformer():
         return
     
     def save_std(self, filename="default"): # PT is convention according to the docs
-        path = "Code/models/" + filename + "pth"
+        path = "Code/models/" + filename + ".pth"
         torch.save(self.model.state_dict(), path)
         return
 
@@ -280,16 +293,16 @@ class Transformer():
 if __name__ == "__main__": 
     transformer = Transformer() # Instantiate the 
     # print("Instantiated Transformer")
-    transformer.optimize() # Optimize (i.e. train) the trainsformer
+    # transformer.optimize() # Optimize (i.e. train) the trainsformer
     # print("Optimized Transformer")
     # # print(f"train data {len(transformer.model.train_data)}: {transformer.model.train_data[:128]} and \nval data {len(transformer.model.val_data)}: {transformer.model.val_data[:128]}")
 
-    # context = str(input("Hey :) Please talk to me! \n"))
+    context = "AAAAA"
     # sleep(.15)
-    # generated = transformer.model.generate(context)[0].tolist()
-    # print(f"{type(generated)} response: {generated}")
-    # decoded = transformer.model.decode(generated)
-    # print(f"decoded: {decoded}")
+    generated = transformer.model.generate(context)[0].tolist()
+    print(f"{type(generated)} response: {generated}")
+    decoded = transformer.model.decode(generated)
+    print(f"decoded: {decoded}")
     transformer.save_std("v4")
     print('saved transformer')
 
