@@ -8,16 +8,26 @@ from Tokenizers.Text import TextTokenizer
 from helpers import get_input
 
 
-file_path = r'Code\datasets\audio\1-62565-A-44.wav'
+# file_path = r'Code\datasets\audio\1-62565-A-44.wav'
+file2 = r'Code/datasets/v12-motor-engine-218824.mp3'
 
 
-text =  get_input("wouter")
-# TT = TextTokenizer(data=text, debug=False)
-AT = AudioTokenizer(debug=True, data=file_path)
-T = Transformer(Tokenizer=AT)
+# # text =  get_input("wouter")
+# # TT = TextTokenizer(data=text, debug=False)
+# AT = AudioTokenizer(debug=True, data=file2)
+# print(AT.encode(file2))
+# # T = Transformer(Tokenizer=AT)
+
+from torchvision import datasets
+from torchvision.transforms import ToTensor
 
 
-
+print(datasets.MNIST(
+    root = 'data',
+    download=True,
+    train=True,
+    transform=ToTensor()
+))
 
 
 
