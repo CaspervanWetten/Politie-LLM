@@ -1,6 +1,9 @@
 
 /Code/models/base-dutch-cased/
-venv/*
+venv/
+venv\*
 *.pyc
 *.pt
 Code/datasets/audio/*
+venv/lib/python3.9/site-packages/pip-20.2.3.dist-info/entry_points.txt
+/*venv*/

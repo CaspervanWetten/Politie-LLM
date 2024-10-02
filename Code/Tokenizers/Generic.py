@@ -13,10 +13,14 @@ class GenericTokenizer(ABC):
             self.data = kwargs['data']
         else:
             raise AttributeError("No data passed!")
-        logging.basicConfig(level=logging.DEBUG if kwargs.get("debug", None) != None else logging.WARNING)
-        self.loging = logging.getLogger(__name__)
-        self.debug = lambda s: self.loging.debug(f"\n{s}\n")
-
+        if kwargs.get("debug", None) != None:
+            logging.basicConfig(level=logging.DEBUG)
+            self.loging = logging.getLogger(__name__)
+            self.debug = lambda s: self.loging.debug(f"\n{s}\n")
+            # torch.set_printoptions(profile="full")
+        else:
+            logging.basicConfig(level=logging.WARNING)
+            
  
     # @abstractmethod
     def train(self, **kwargs):

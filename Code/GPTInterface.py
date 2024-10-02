@@ -89,8 +89,7 @@ class Transformer():
             # Tokenizer
             if Tokenizer != None:
                 self.Tokenizer = Tokenizer
-                self.distinct_tokens = Tokenizer.distinct_tokens
-                self.num_distinct_tokens = Tokenizer.num_distinct_tokens
+                self.num_dictionary = Tokenizer.num_dictionary
             else:
                 print("WARNING: NO TOKENIZER PASSED, DEFAULTING TO MVP")
                 ### Maak een dataset voor de tokenizer
@@ -103,8 +102,8 @@ class Transformer():
                 inttostring= { i:ch for i,ch in enumerate(chars) } # {0:"A", 1:"B", ..., 80:"!"}
                 self._bencode = lambda s: [stringtoint[c] for c in s] # backup encoding algo
                 self._bdecode = lambda l: ''.join([inttostring[i] for i in l]) # backup decoding algo
-                self.distinct_tokens = chars
-                self.num_distinct_tokens = vocab_size
+                self.dictionary = chars
+                self.num_dictionary = vocab_size
 
             # Data getter
             data = data if data != None else torch.tensor(self.encode(text), dtype=torch.long)
@@ -114,15 +113,15 @@ class Transformer():
             self.val_data = data[n:]
 
             # Each token directly reads off the logits for the next token from a lookup table (which lookup table?)
-            self.token_embedding_dimmingtable = nn.Embedding(self.num_distinct_tokens, self.Transformer.embedding_dim)
-
+            self.token_embedding_dimmingtable = nn.Embedding(self.num_dictionary, self.Transformer.embedding_dim)
+ 
             """Note that the sequence they appear is also the sequence they are used"""
 
             #We're not just encoding identity, we're also encoding position!
             self.positioembedding_dimding_table = nn.Embedding(self.Transformer.block_size, self.Transformer.embedding_dim)
             self.blocks = nn.Sequential(*[self.Transformer.Block(self.Transformer, self.Transformer.embedding_dim, n_head=self.Transformer.n_head) for _ in range(self.Transformer.n_layer)])
             self.ln_f = nn.LayerNorm(self.Transformer.embedding_dim) # Final layer norm
-            self.lm_head = nn.Linear(self.Transformer.embedding_dim, self.num_distinct_tokens) # LM=loaded model
+            self.lm_head = nn.Linear(self.Transformer.embedding_dim, self.num_dictionary) # LM=loaded model
             # N_embed is the number of embedded dimentions
             # .Embedding creates a shape of vocab_size x vocab_size
             # De inputs voor de transformer zoeken in de tensor rij en plukken de Xte (X=tokenized input integer) rij uit de lookup table
